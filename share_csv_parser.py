@@ -1,5 +1,8 @@
 import csv
-from collections import defaultdict
+from datetime import datetime
+
+import ScripDetail
+
 dict = {}
 with open ('Shares.csv', newline='') as csvfile:
     totalValidLines = 0
@@ -7,16 +10,16 @@ with open ('Shares.csv', newline='') as csvfile:
     for row in reader:
         #print(' '.join(row))
         if len(row) == 8:
-            print(row)
+            #print(row)
             if row[0] == 'NSE' or row[0] == 'BSE':
                 totalValidLines += 1
                 #This is the actual line which contains information
                 if row[2] in dict:
                     #This scrip is already available in the dictionary
-                    dict[row[2]].append({row[1], row[3], row[4], row[5], row[6]})
+                    dict[row[2]].append(ScripDetail.make_ScripDetail(row[1], row[3], row[4], row[5], row[6]))
                 else:
-                    dict[row[2]] = list()
-                    dict[row[2]].append({row[1], row[3], row[4], row[5], row[6]})
+                    dict[row[2]] = [];
+                    dict[row[2]].append(ScripDetail.make_ScripDetail(row[1], row[3], row[4], row[5], row[6]))
         else:
             print('No. of colums in the csv file is not equal to 8')
             exit()
@@ -43,13 +46,36 @@ totalSell = 0
 
 for key in dict.keys():
     scripName = key
-    print (scripName)
     scripDetails = dict[scripName]
-    print (scripDetails)
-    for detail in scripDetails:
-        if detail[1] == 'SELL':
-            totalSell -= int(detail[4])
-        if detail[1] == 'BUY':
-            totalBuy += int(detail[4])
+    scripDetails.sort(key=lambda detail: detail.date)
+    scripTotalSell = 0
+    scripTotalBuy = 0
+    scripCount = 0;
+    scripsSoldNo = 0;
+    scripsBoughtNo = 0;
+    scripAverageBoughtPrice = 0;
 
-print (totalBuy - totalSell)
+    for detail in scripDetails:
+        #adding up sell together
+        if detail.orderType == 'SELL':
+            scripTotalSell += float(detail.totalPrice)
+            scripsSoldNo += -int(detail.quantity)
+        #adding up buy together
+        if detail.orderType == 'BUY':
+            #Since BUY items are marked as negative making them positive by negating it with minus symbol
+            scripTotalBuy += -float(detail.totalPrice)
+            scripsBoughtNo += int(detail.quantity)
+
+    if scripsBoughtNo > 0 and scripsSoldNo > 0 :
+        scripAverageBoughtPrice = scripTotalBuy/scripsBoughtNo
+        scripGainOrLoss = (((scripAverageBoughtPrice * scripsSoldNo) - scripTotalSell) * 100)/scripTotalSell
+        #print('Capital gain/loss percentage in the scrip ', scripName, ' : ', '%.sf' %scripGainOrLoss)
+
+    totalSell += scripTotalSell
+    totalBuy += scripTotalBuy
+    #print (scripName , '\t\t', scripCount, '\t', scripTotalBuy - scripTotalSell)
+
+print('Total capital outflow : ', "%.2f" %totalBuy)
+print('Total capital inflow  : ', "%.2f" %totalSell)
+print('Total investment     : ', "%.2f" %(totalBuy - totalSell))
+
