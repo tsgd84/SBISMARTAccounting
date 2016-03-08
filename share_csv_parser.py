@@ -1,7 +1,11 @@
+import os
+from os import path
 import csv
-from datetime import datetime
-
+from dateutil.relativedelta import relativedelta
 import ScripDetail
+
+def isDiffMoreThanOneYear(startDate, endDate):
+    return relativedelta(endDate, startDate).years
 
 def computeMargin(scripName, scripDetails = []):
     sellOrders = [sellOrder for sellOrder in scripDetails if sellOrder.orderType == 'SELL']
@@ -13,55 +17,90 @@ def computeMargin(scripName, scripDetails = []):
     totalMargin = 0.0
     totalTransactionAmount = 0.0
 
+    shortTermSoldAmount = 0.0
+    shortTermBoughtAmount = 0.0
+    totalshortTermBoughtAmount = 0.0
+    shortTermMargin = 0.0
+
+    longTermSoldAmount = 0.0
+    longTermBoughtAmount = 0.0
+    totalLongTermBoughtAmount = 0.0
+    longTermMargin = 0.0
+
+
     if totalSoldQuantity > 0:
         for sellOrder in sellOrders:
             for buyOrder in buyOrders:
-                if(buyOrder.remainingQuantity > 0 and sellOrder.remainingQuantity > 0):
-                    soldQuantityRemaining = sellOrder.remainingQuantity
-                    if buyOrder.remainingQuantity > soldQuantityRemaining:
-                        soldAmount = (soldQuantityRemaining * sellOrder.price)
-                        boughtAmount = (buyOrder.price * soldQuantityRemaining)
-                        buyOrder.remainingQuantity = buyOrder.remainingQuantity - soldQuantityRemaining
-                        sellOrder.remainingQuantity = 0
-                    elif buyOrder.remainingQuantity < soldQuantityRemaining:
-                        soldAmount = (buyOrder.remainingQuantity * sellOrder.price)
-                        boughtAmount = (buyOrder.price * buyOrder.remainingQuantity)
-                        sellOrder.remainingQuantity = sellOrder.remainingQuantity - buyOrder.remainingQuantity
-                        buyOrder.remainingQuantity = 0
+                if buyOrder.quantity > 0 and sellOrder.quantity > 0:
+                    soldQuantityRemaining = sellOrder.quantity
+                    if buyOrder.quantity > soldQuantityRemaining:
+                        if isDiffMoreThanOneYear(buyOrder.date, sellOrder.date) > 0:
+                            longTermSoldAmount = (soldQuantityRemaining * sellOrder.price)
+                            longTermBoughtAmount = (buyOrder.price * soldQuantityRemaining)
+                        else:
+                            shortTermSoldAmount = (soldQuantityRemaining * sellOrder.price)
+                            shortTermBoughtAmount = (buyOrder.price * soldQuantityRemaining)
+                        buyOrder.quantity = buyOrder.quantity - soldQuantityRemaining
+                        sellOrder.quantity = 0
+                    elif buyOrder.quantity < soldQuantityRemaining:
+                        if isDiffMoreThanOneYear(buyOrder.date, sellOrder.date) > 0:
+                            longTermSoldAmount = (buyOrder.quantity * sellOrder.price)
+                            longTermBoughtAmount = (buyOrder.price * buyOrder.quantity)
+                        else:
+                            shortTermSoldAmount = (buyOrder.quantity * sellOrder.price)
+                            shortTermBoughtAmount = (buyOrder.price * buyOrder.quantity)
+                        sellOrder.quantity = sellOrder.quantity - buyOrder.quantity
+                        buyOrder.quantity = 0
                     else:
-                        soldAmount = (sellOrder.remainingQuantity * sellOrder.price)
-                        boughtAmount = (buyOrder.price * buyOrder.remainingQuantity)
-                        buyOrder.remainingQuantity = sellOrder.remainingQuantity = 0
+                        if isDiffMoreThanOneYear(buyOrder.date, sellOrder.date) > 0:
+                            longTermSoldAmount = (sellOrder.quantity * sellOrder.price)
+                            longTermBoughtAmount = (buyOrder.price * buyOrder.quantity)
+                        else:
+                            shortTermSoldAmount = (sellOrder.quantity * sellOrder.price)
+                            shortTermBoughtAmount = (buyOrder.price * buyOrder.quantity)
+                        buyOrder.quantity = sellOrder.quantity = 0
 
-                    totalBoughtAmount += boughtAmount
-                    totalTransactionAmount +=  (soldAmount + boughtAmount)
-                    totalMargin += (soldAmount - boughtAmount)
+                    totalLongTermBoughtAmount += longTermBoughtAmount
+                    totalshortTermBoughtAmount += shortTermBoughtAmount
+                    totalTransactionAmount += (longTermBoughtAmount + shortTermBoughtAmount + longTermSoldAmount + shortTermSoldAmount)
+                    shortTermMargin += (shortTermSoldAmount - shortTermBoughtAmount)
+                    longTermMargin += (longTermSoldAmount - longTermBoughtAmount)
 
         #print('Total boughtAmount : ', totalBoughtAmount)
         #print('Total transaction Amount : ', totalTransactionAmount)
-        if totalBoughtAmount > 0 :
-            print(key , " : ", (totalMargin * 100)/totalBoughtAmount)
+        if totalLongTermBoughtAmount > 0 or totalshortTermBoughtAmount > 0 :
+            print(key , " : ")
+            if totalLongTermBoughtAmount > 0:
+                print('\t LT Margin : ', (longTermMargin * 100)/totalLongTermBoughtAmount)
+            if totalshortTermBoughtAmount > 0:
+                print('\t ST Margin : ', (shortTermMargin * 100)/totalshortTermBoughtAmount)
+
             
 dict = {}
-with open ('Shares.csv', newline='') as csvfile:
-    totalValidLines = 0
-    reader = csv.reader(csvfile, delimiter=',')
-    for row in reader:
-        #print(' '.join(row))
-        if len(row) == 8:
-            #print(row)
-            if row[0] == 'NSE' or row[0] == 'BSE':
-                totalValidLines += 1
-                #This is the actual line which contains information
-                if row[2] in dict:
-                    #This scrip is already available in the dictionary
-                    dict[row[2]].append(ScripDetail.make_ScripDetail(row[1], row[3], int(row[4]), float(row[5]), float(row[6])))
-                else:
-                    dict[row[2]] = [];
-                    dict[row[2]].append(ScripDetail.make_ScripDetail(row[1], row[3], int(row[4]), float(row[5]), float(row[6])))
-        else:
-            print('No. of colums in the csv file is not equal to 8')
-            exit()
+#files = [f for f in os.listdir("E:\\Deena\\github\\SBISMARTAccounting\\tradelogs\\") if path.isfile(f)]
+
+files = os.listdir("tradelogs")
+
+for file in files:
+    with open ('tradelogs/'+file, newline='') as csvfile:
+        totalValidLines = 0
+        reader = csv.reader(csvfile, delimiter=',')
+        for row in reader:
+            #print(' '.join(row))
+            if len(row) == 8:
+                #print(row)
+                if row[0] == 'NSE' or row[0] == 'BSE':
+                    totalValidLines += 1
+                    #This is the actual line which contains information
+                    if row[2] in dict:
+                        #This scrip is already available in the dictionary
+                        dict[row[2]].append(ScripDetail.make_ScripDetail(row[1], row[3], int(row[4]), float(row[5]), float(row[6])))
+                    else:
+                        dict[row[2]] = [];
+                        dict[row[2]].append(ScripDetail.make_ScripDetail(row[1], row[3], int(row[4]), float(row[5]), float(row[6])))
+            else:
+                print('No. of colums in the csv file is not equal to 8')
+                exit()
 
 print ('Total number of valid lines : ', totalValidLines)
 
@@ -76,7 +115,7 @@ print ('Total items in the dictionary : ', len(dict))
 
 if totalValidLines != totalLinesParsed:
     print ('There is a mismatch between the valid lines and number of lines parsed ',  totalValidLines,' != ', totalLinesParsed)
-    exit()
+    #exit()
 
 
 #Calculate the profit/loss in each scrip
