@@ -3,9 +3,43 @@ from os import path
 import csv
 from dateutil.relativedelta import relativedelta
 import ScripDetail
+from FinYearData import TranscationData
+from FinYearData import FinYearWiseData
+from FinYearData import ScripTransaction
 
 def isDiffMoreThanOneYear(startDate, endDate):
     return relativedelta(endDate, startDate).years
+
+def getFinancialYear(dateTime):
+    timeTuple = dateTime.timetuple()
+    currentYear = timeTuple[0]
+    if timeTuple[1] < 4:
+        return str(currentYear-1) + "-" + str(currentYear)
+    else:
+        return str(currentYear) + "-" + str(currentYear+1)
+
+def AddToFinYearData(scripName, soldAmount, boughtAmount, sellDate, buyDate, finYearData):
+    scripTransaction = None
+    transData = None
+    transData = TranscationData(soldAmount, boughtAmount)
+    #print ("FinancialYear - ScripTransactions : ", finYearData.scripTransactions)
+    if len(finYearData.scripTransactions) <= 0:
+        scripTransaction = ScripTransaction(scripName)
+        finYearData.scripTransactions.append(scripTransaction)
+    else:
+        scripTransactions = [sTs for sTs in finYearData.scripTransactions if sTs.scripName == scripName]
+        if len(scripTransactions) <= 0:
+            scripTransaction = ScripTransaction(scripName)
+            finYearData.scripTransactions.append(scripTransaction)
+        else:
+            scripTransaction = scripTransactions[0]
+
+    if isDiffMoreThanOneYear(buyDate, sellDate) > 0:
+        scripTransaction.longTermTrans.append(transData)
+    else:
+        scripTransaction.shortTermTrans.append(transData)
+
+financialYearArray = []
 
 def computeMargin(scripName, scripDetails = []):
     sellOrders = [sellOrder for sellOrder in scripDetails if sellOrder.orderType == 'SELL']
@@ -27,53 +61,59 @@ def computeMargin(scripName, scripDetails = []):
     totalLongTermBoughtAmount = 0.0
     longTermMargin = 0.0
 
-
     if totalSoldQuantity > 0:
         for sellOrder in sellOrders:
+            finYearData = None
+            financialYearStr = getFinancialYear(sellOrder.date)
+            if not financialYearArray:
+                finYearData = FinYearWiseData(financialYearStr)
+                financialYearArray.append(finYearData)
+            else:
+                finYearDatas = [fyd for fyd in financialYearArray if fyd.financialYear == financialYearStr]
+                if len(finYearDatas) <= 0:
+                    finYearData = FinYearWiseData(financialYearStr)
+                    financialYearArray.append(finYearData)
+                else:
+                    finYearData = finYearDatas[0]
+                    #print ("Already added - finYearData.financialYear : ", finYearData.financialYear)
+
             for buyOrder in buyOrders:
                 if buyOrder.quantity > 0 and sellOrder.quantity > 0:
                     soldQuantityRemaining = sellOrder.quantity
                     if buyOrder.quantity > soldQuantityRemaining:
-                        if isDiffMoreThanOneYear(buyOrder.date, sellOrder.date) > 0:
-                            longTermSoldAmount = (soldQuantityRemaining * sellOrder.price)
-                            longTermBoughtAmount = (buyOrder.price * soldQuantityRemaining)
-                        else:
-                            shortTermSoldAmount = (soldQuantityRemaining * sellOrder.price)
-                            shortTermBoughtAmount = (buyOrder.price * soldQuantityRemaining)
+                        soldAmount = (soldQuantityRemaining * sellOrder.price)
+                        boughtAmount = (buyOrder.price * soldQuantityRemaining)
+                        AddToFinYearData(scripName, soldAmount, boughtAmount, sellOrder.date, buyOrder.date, finYearData)
                         buyOrder.quantity = buyOrder.quantity - soldQuantityRemaining
                         sellOrder.quantity = 0
+
                     elif buyOrder.quantity < soldQuantityRemaining:
-                        if isDiffMoreThanOneYear(buyOrder.date, sellOrder.date) > 0:
-                            longTermSoldAmount = (buyOrder.quantity * sellOrder.price)
-                            longTermBoughtAmount = (buyOrder.price * buyOrder.quantity)
-                        else:
-                            shortTermSoldAmount = (buyOrder.quantity * sellOrder.price)
-                            shortTermBoughtAmount = (buyOrder.price * buyOrder.quantity)
+                        soldAmount = (buyOrder.quantity * sellOrder.price)
+                        boughtAmount = (buyOrder.price * buyOrder.quantity)
+                        AddToFinYearData(scripName, soldAmount, boughtAmount, sellOrder.date, buyOrder.date, finYearData)
                         sellOrder.quantity = sellOrder.quantity - buyOrder.quantity
                         buyOrder.quantity = 0
+
                     else:
-                        if isDiffMoreThanOneYear(buyOrder.date, sellOrder.date) > 0:
-                            longTermSoldAmount = (sellOrder.quantity * sellOrder.price)
-                            longTermBoughtAmount = (buyOrder.price * buyOrder.quantity)
-                        else:
-                            shortTermSoldAmount = (sellOrder.quantity * sellOrder.price)
-                            shortTermBoughtAmount = (buyOrder.price * buyOrder.quantity)
+                        soldAmount = (sellOrder.quantity * sellOrder.price)
+                        boughtAmount = (buyOrder.price * buyOrder.quantity)
+                        AddToFinYearData(scripName, soldAmount, boughtAmount, sellOrder.date, buyOrder.date, finYearData)
                         buyOrder.quantity = sellOrder.quantity = 0
 
-                    totalLongTermBoughtAmount += longTermBoughtAmount
-                    totalshortTermBoughtAmount += shortTermBoughtAmount
-                    totalTransactionAmount += (longTermBoughtAmount + shortTermBoughtAmount + longTermSoldAmount + shortTermSoldAmount)
-                    shortTermMargin += (shortTermSoldAmount - shortTermBoughtAmount)
-                    longTermMargin += (longTermSoldAmount - longTermBoughtAmount)
+                    #totalLongTermBoughtAmount += longTermBoughtAmount
+                    #totalshortTermBoughtAmount += shortTermBoughtAmount
+                    #totalTransactionAmount += (longTermBoughtAmount + shortTermBoughtAmount + longTermSoldAmount + shortTermSoldAmount)
+                    #shortTermMargin += (shortTermSoldAmount - shortTermBoughtAmount)
+                    #longTermMargin += (longTermSoldAmount - longTermBoughtAmount)
 
         #print('Total boughtAmount : ', totalBoughtAmount)
         #print('Total transaction Amount : ', totalTransactionAmount)
-        if totalLongTermBoughtAmount > 0 or totalshortTermBoughtAmount > 0 :
-            print(key , " : ")
-            if totalLongTermBoughtAmount > 0:
-                print('\t LT Margin : ', (longTermMargin * 100)/totalLongTermBoughtAmount)
-            if totalshortTermBoughtAmount > 0:
-                print('\t ST Margin : ', (shortTermMargin * 100)/totalshortTermBoughtAmount)
+        #if totalLongTermBoughtAmount > 0 or totalshortTermBoughtAmount > 0 :
+            #print(key , " : ")
+            #if totalLongTermBoughtAmount > 0:
+                #print('\t LT Margin : ', (longTermMargin * 100)/totalLongTermBoughtAmount)
+            #if totalshortTermBoughtAmount > 0:
+                #print('\t ST Margin : ', (shortTermMargin * 100)/totalshortTermBoughtAmount)
 
             
 dict = {}
@@ -102,7 +142,7 @@ for file in files:
                 print('No. of colums in the csv file is not equal to 8')
                 exit()
 
-print ('Total number of valid lines : ', totalValidLines)
+#print ('Total number of valid lines : ', totalValidLines)
 
 totalLinesParsed = 0
 for key in dict.keys():
@@ -110,11 +150,11 @@ for key in dict.keys():
     value = dict[key]
     totalLinesParsed += len(value)
 
-print ('Total number of lines parsed : ', totalLinesParsed)
-print ('Total items in the dictionary : ', len(dict))
+#print ('Total number of lines parsed : ', totalLinesParsed)
+#print ('Total items in the dictionary : ', len(dict))
 
-if totalValidLines != totalLinesParsed:
-    print ('There is a mismatch between the valid lines and number of lines parsed ',  totalValidLines,' != ', totalLinesParsed)
+#if totalValidLines != totalLinesParsed:
+    #print ('There is a mismatch between the valid lines and number of lines parsed ',  totalValidLines,' != ', totalLinesParsed)
     #exit()
 
 
@@ -133,8 +173,8 @@ for key in dict.keys():
     scripsBoughtNo = 0;
     scripAverageBoughtPrice = 0;
 
+    #calculateFinanciaYears(scripDetails)
     computeMargin(key, scripDetails)
-
     for detail in scripDetails:
         #adding up sell together
         if detail.orderType == 'SELL':
@@ -155,6 +195,30 @@ for key in dict.keys():
     totalBuy += scripTotalBuy
     #print (scripName , '\t\t', scripCount, '\t', scripTotalBuy - scripTotalSell)
 
+
 print('Total capital outflow : ', "%.2f" %totalBuy)
 print('Total capital inflow  : ', "%.2f" %totalSell)
 print('Total investment     : ', "%.2f" %(totalBuy - totalSell))
+
+#print ("Size of the Financialy years :", len(financialYearArray))
+
+for financialYear in financialYearArray:
+    print ("For the financial year : ", financialYear.financialYear)
+    print ("\n ShortTerm Margin : ")
+    shortTermMargins = financialYear.getMargin("ShortTerm")
+    for key in shortTermMargins.keys():
+        margin = shortTermMargins[key]
+        if margin != 0:
+            print (key, "%.2f" %margin)
+    print ("\n")
+
+    print ("LongTerm Margin : ")
+    longTermMargins = financialYear.getMargin("LongTerm")
+    for key in longTermMargins.keys():
+        margin = longTermMargins[key]
+        if margin != 0:
+            print (key, "%.2f" %margin)
+    print ("\n")
+
+    #print ("ShorTerm Capital Gain : ", financialYear.getMargin("ShortTerm"))
+    #print ("LongTerm Capital Gain : ", financialYear.getMargin("LongTerm"))
